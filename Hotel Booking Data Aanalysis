@@ -1,1 +1,416 @@
+/*Hotel Booking Data Analysis Using SQL */
+
+/* Objective: */
+-- To design and implement a comprehensive SQL project for analyzing hotel booking data.
+--  The project focuses on extracting actionable insights from bookings, revenue, customer behavior, and operational metrics to support data-driven decision-making in the hospitality industry.
+
+/* Project Scope: */
+-- Data Sources: 
+		-- Fact tables: fact_bookings, fact_aggregated_bookings
+		-- Dimension tables: dim_hotels, dim_rooms, dim_date
+
+-- Key Analytical Goals:
+-- Booking Performance: Analyze successful bookings by hotel, room type, and booking platform.
+-- Revenue Insights: Examine revenue generated, revenue realized, and trends by hotel and city.
+-- Customer Behavior: Evaluate customer ratings, repeat bookings, and average stay duration.
+-- Operational Metrics: Assess occupancy rates, room capacity utilization, and booking cancellations.
+-- Booking Trends: Track monthly bookings, day-wise trends, and seasonal patterns.
+
+
+-- Analysis
+  Create Database Hotel_management_db;
+  
+  use Hotel_management_db;
+  
+  show tables;
+  
+
+   
+SET SQL_SAFE_UPDATES = 0;
+UPDATE dim_date
+SET date = DATE_FORMAT(STR_TO_DATE(date, '%d-%b-%y'), '%Y-%m-%d');
+SET SQL_SAFE_UPDATES = 1;
+  alter table dim_date modify column date date;
+  alter table dim_date add constraint primary key(date); 
+  select * from dim_date;
+  
+  
+  select * from dim_hotels;
+  alter table dim_hotels modify column property_id int primary key;
+  
+  
+  select * from dim_rooms;
+  alter table dim_rooms modify column room_id varchar(4) primary key;
+  
+  
+  
+select * from fact_aggregated_bookings;
+SET SQL_SAFE_UPDATES = 0;
+  UPDATE fact_aggregated_bookings
+SET check_in_date = DATE_FORMAT(STR_TO_DATE(check_in_date, '%d-%b-%y'), '%Y-%m-%d');
+SET SQL_SAFE_UPDATES = 1;
+
+alter table fact_aggregated_bookings modify column check_in_date date;
+select * from fact_aggregated_bookings;
+
+select * from fact_bookings;
+
+ALTER TABLE fact_bookings
+modify column booking_id varchar(250) primary key;
+
+Alter table fact_bookings
+add constraint fk_propertyid foreign key(property_id) references dim_hotels(property_id);
+
+ALTER TABLE fact_bookings
+modify column check_in_date date;
+ALTER TABLE fact_bookings
+ADD CONSTRAINT fk_check_in_date FOREIGN KEY (check_in_date) REFERENCES dim_date (date);
+
+ALTER TABLE fact_bookings
+modify column checkout_date date;
+ALTER TABLE fact_bookings
+ADD CONSTRAINT fk_checkout_date FOREIGN KEY (checkout_date) REFERENCES dim_date (date);
+
+ALTER TABLE fact_bookings
+modify column booking_date date;
+
+ALTER TABLE fact_aggregated_bookings
+ADD CONSTRAINT fk_agg_property_id FOREIGN KEY (property_id) REFERENCES dim_hotels (property_id);
+
+select * from fact_aggregated_bookings;
+alter table fact_aggregated_bookings modify column room_category varchar(4) ;
+
+ALTER TABLE fact_aggregated_bookings
+ADD CONSTRAINT fk_agg_room_category FOREIGN KEY (room_category) REFERENCES dim_rooms (room_id);
+
+ALTER TABLE fact_aggregated_bookings
+ADD CONSTRAINT fk_agg_check_in_date FOREIGN KEY (check_in_date) REFERENCES dim_date (date);
+
+-- -----------------------------------------------------------------------------------------------------------------------------------
+
+#1.Find  Successful bookings per hotel and room type for each month.
+select h.property_name,
+r.room_class,
+d.`mmm yy`, 
+sum(f.successful_bookings ) as total_successful_bookings from dim_hotels as h 
+inner join 
+fact_aggregated_bookings as f on h.property_id=f.property_id
+inner join dim_rooms as r on f.room_category=r.room_id
+inner join dim_date as d on f.check_in_date=d.date
+group by  h.property_name,
+r.room_class,
+d.`mmm yy`;
+
+
+#2 Total revenue generated and realized for each hotel.
+select *from fact_bookings;
+select h.property_name, sum(fb.revenue_generated),sum(fb.revenue_realized) from dim_hotels as h 
+inner join fact_bookings as fb
+on h.property_id=fb.property_id
+group by h.property_name;
+ 
+
+#3 Average customer ratings for each hotel
+select h.property_name,avg(fb.ratings_given) from 
+dim_hotels as h
+inner join fact_bookings as fb
+on h.property_id=fb.property_id
+group by h.property_name;
+
+#4 Total bookings on weekdays vs weekends.
+select d.day_type,sum(fa.successful_bookings) from dim_date as d 
+inner join fact_aggregated_bookings as fa 
+on d.date=fa.check_in_date
+group by d.day_type;
+
+#5 Room capacity utilization rate for each hotel and room type
+select h.property_name,r.room_class,(sum(fa.successful_bookings)/sum(fa.capacity))*100 from dim_hotels as h
+inner join fact_aggregated_bookings as fa
+on h.property_id=fa.property_id
+inner join dim_rooms as r on
+r.room_id=fa.room_category
+group by  h.property_name,r.room_class;
+
+#6 Number of bookings made through each platform.
+select booking_platform, count(booking_id) from fact_bookings 
+group by booking_platform order by count(booking_id) desc; 
+
+#7 Percentage of bookings cancelled per hotel
+select h.property_name,count(fb.booking_id),round((SUM(CASE WHEN fb.booking_status = 'Cancelled' THEN 1 ELSE 0 END)/count(fb.booking_id))*100,2) AS cancelled_bookings
+from dim_hotels as h 
+inner join  fact_bookings as fb
+on fb.property_id=h.property_id
+group by h.property_name;
+ 
+#8 Average number of guests per booking.
+select h.property_name,round(Avg(fb.no_guests)) from dim_hotels as h inner join 
+fact_bookings as fb on h.property_id=fb.property_id
+group by h.property_name;
+
+
+#9  Days with the highest number of check-ins.
+select d.date,count(fb.booking_id) from dim_date as d
+inner join fact_bookings as fb
+on d.date=fb.check_in_date group by d.date order by count(fb.booking_id) desc;
+
+#10 Revenue generated and realized by booking status.
+SELECT 
+    fb.booking_status,
+    SUM(fb.revenue_generated) AS total_revenue_generated,
+    SUM(fb.revenue_realized) AS total_revenue_realized
+FROM 
+    fact_bookings fb
+GROUP BY 
+    fb.booking_status
+ORDER BY 
+    total_revenue_realized DESC;
+ 
+ #11 Most frequently booked room types.
+ SELECT 
+    r.room_class,
+    COUNT(fb.booking_id) AS total_bookings
+FROM 
+    fact_bookings fb
+JOIN 
+    dim_rooms r ON fb.room_category = r.room_id
+GROUP BY 
+    r.room_class
+ORDER BY 
+    total_bookings DESC;
+#12  Monthly booking trends.
+SELECT 
+    d.`mmm yy`,
+    COUNT(fb.booking_id) AS total_bookings
+FROM 
+    fact_bookings fb
+JOIN 
+    dim_date d ON fb.booking_date = d.date
+GROUP BY 
+    d.`mmm yy`
+ORDER BY 
+    d.`mmm yy`;
+    
+#13 Occupancy rates by hotel.
+select h.property_name, count(fb.booking_id),sum(fa.capacity), (count(fb.booking_id)/sum(fa.capacity))*100  
+from fact_bookings as fb
+inner join fact_aggregated_bookings as fa 
+on fa.property_id=fb.property_id AND fb.check_in_date = fa.check_in_date
+inner join dim_hotels as h
+on h.property_id=fb.property_id
+group by h.property_name;  
+
+# 14 Average ratings by room class.
+SELECT 
+    r.room_class,
+    AVG(fb.ratings_given) AS average_rating
+FROM 
+    fact_bookings fb
+JOIN 
+    dim_rooms r ON fb.room_category = r.room_id
+GROUP BY 
+    r.room_class
+ORDER BY 
+    average_rating DESC;
+    
+ #15 Total revenue generated by city.
+SELECT 
+    h.city,
+    SUM(fb.revenue_generated) AS total_revenue_generated,
+    SUM(fb.revenue_realized) AS total_revenue_realized
+FROM 
+    fact_bookings fb
+JOIN 
+    dim_hotels h ON fb.property_id = h.property_id
+GROUP BY 
+    h.city
+ORDER BY 
+    total_revenue_realized DESC;
+    
+#16 Analyze booking status distribution.
+SELECT 
+    fb.booking_status,
+    COUNT(fb.booking_id) AS total_bookings
+FROM 
+    fact_bookings fb
+GROUP BY 
+    fb.booking_status
+ORDER BY 
+    total_bookings DESC;
+    
+    
+# 17 Average duration of stay per booking.
+SELECT 
+    h.property_name,
+    AVG(DATEDIFF(fb.checkout_date, fb.check_in_date)) AS average_stay_duration
+FROM 
+    fact_bookings fb
+JOIN 
+    dim_hotels h ON fb.property_id = h.property_id
+GROUP BY 
+    h.property_name
+ORDER BY 
+    average_stay_duration DESC;
+
+#18 Total room bookings by room category.
+SELECT 
+    r.room_class,
+    COUNT(fb.booking_id) AS total_bookings
+FROM 
+    fact_bookings fb
+JOIN 
+    dim_rooms r ON fb.room_category = r.room_id
+GROUP BY 
+    r.room_class
+ORDER BY 
+    total_bookings DESC;
+    
+#19 Average lead time for bookings.
+SELECT 
+    h.property_name,
+    AVG(DATEDIFF(fb.check_in_date, fb.booking_date)) AS average_lead_time
+FROM 
+    fact_bookings fb
+JOIN 
+    dim_hotels h ON fb.property_id = h.property_id
+GROUP BY 
+    h.property_name
+ORDER BY 
+    average_lead_time DESC;
+
+#20 ADR (Average Daily Rate)
+-- It is the ratio of revenue to the total rooms booked/sold. 
+-- It measures the average amount paid for rooms sold in a given time period.
+use hotel_management_db;
+select d.date,sum(fb.revenue_generated)/nullif(count(fb.booking_id),0) as ADR from dim_date as d
+inner join fact_bookings as fb 
+on d.date=fb.booking_date
+where fb.booking_status='Checked Out'
+group by d.date;
+
+
+#21 Realisation Percentage
+-- It is the successful "checked out" percentage of all bookings that happened.
+select d.date,round((sum(case when booking_status='Checked Out' then 1 else 0 end)/count(fb.booking_id))*100,2)
+from dim_date as d 
+inner join fact_bookings as fb
+on d.date=fb.booking_date
+group by d.date;
+
+
+
+#22 RevPAR (Revenue Per Available Room)
+-- RevPAR represents the revenue generated per available room, whether or not they are occupied. 
+-- It helps hotels measure their revenue performance and price rooms accurately.
+
+SELECT 
+    d.date AS booking_date, 
+    SUM(fb.revenue_realized) / NULLIF(SUM(fab.capacity), 0) AS RevPAR
+FROM 
+    fact_bookings fb
+JOIN 
+    dim_date d ON fb.booking_date = d.date
+JOIN 
+    fact_aggregated_bookings fab ON fb.property_id = fab.property_id AND fb.room_category = fab.room_category
+WHERE 
+    fb.booking_status = 'Checked Out'
+GROUP BY 
+    d.date;
+
+# 23 DBRN (Daily Booked Room Nights)
+-- This metric tells on average how many rooms are booked per day over a specific period.
+SELECT 
+    d.date AS booking_date, 
+    COUNT(DISTINCT fb.room_category) AS DBRN
+FROM 
+    fact_bookings fb
+JOIN 
+    dim_date d ON fb.booking_date = d.date
+GROUP BY 
+    d.date;
+
+ #24 DSRN (Daily Sellable Room Nights)
+-- This metric tells how many rooms are ready to sell per day over a specific period.
+SELECT 
+    fab.check_in_date AS booking_date, 
+    SUM(fab.capacity) AS DSRN
+FROM 
+    fact_aggregated_bookings fab
+GROUP BY 
+    fab.check_in_date;
+
+ #25 DURN (Daily Utilized Room Nights)
+-- This metric tells on how many rooms are successfully utilized by customers per day over a specific period.
+SELECT 
+    d.date AS booking_date, 
+    SUM(CASE WHEN fb.booking_status = 'Checked Out' THEN 1 ELSE 0 END) AS DURN
+FROM 
+    fact_bookings fb
+JOIN 
+    dim_date d ON fb.booking_date = d.date
+GROUP BY 
+    d.date;
+    
+    
+ #26 Revenue WoW Change %
+ SELECT 
+    d.`week no`, 
+    (SUM(fb.revenue_realized) - LAG(SUM(fb.revenue_realized)) 
+     OVER (ORDER BY d.`week no`)) * 100.0 
+    / NULLIF(LAG(SUM(fb.revenue_realized)) OVER (ORDER BY d.`week no`), 0) 
+    AS revenue_wow_change
+FROM 
+    fact_bookings fb
+left JOIN 
+    dim_date d ON fb.booking_date = d.date
+GROUP BY 
+    d.`week no`;
+  
+#27 Occupancy WoW Change %
+use hotel_management_db;
+select d.`week no` , ((sum(case when fb.booking_status="Checked Out" then 1 else 0 end)-lag(sum(case when fb.booking_status="Checked Out" then 1 else 0 end )) over  (order by d.`week no`))/nullif(lag(sum(case when fb.booking_status="Checked Out" then 1 else 0 end )) over  (order by d.`week no`),0))*100 
+AS occupancy_wow_change
+FROM 
+dim_date as d inner join
+fact_bookings as fb on d.date= fb.booking_date
+group by d.`week no`;
+
+#28 ADR WoW Change %
+-- To calculate the percentage change in ADR week over week.
+SELECT 
+    d.`week no`, 
+    (AVG(fb.revenue_generated) - LAG(AVG(fb.revenue_generated)) OVER (ORDER BY d.`week no`)) * 100.0 / NULLIF(LAG(AVG(fb.revenue_generated)) OVER (ORDER BY d.`week no`), 0) AS adr_wow_change
+FROM 
+    fact_bookings fb
+JOIN 
+    dim_date d ON fb.booking_date = d.date
+GROUP BY 
+    d.`week no`;
+
+# 29 RevPAR WoW Change %
+-- To calculate the percentage change in RevPAR week over week.
+SELECT 
+    d.`week no`, 
+    (SUM(fb.revenue_realized) / NULLIF(SUM(fab.capacity), 0) - LAG(SUM(fb.revenue_realized) / NULLIF(SUM(fab.capacity), 0)) OVER (ORDER BY d.`week no`)) * 100.0 / NULLIF(LAG(SUM(fb.revenue_realized) / NULLIF(SUM(fab.capacity), 0)) OVER (ORDER BY d.`week no`), 0) AS revpar_wow_change
+FROM 
+    fact_bookings fb
+JOIN 
+    dim_date d ON fb.booking_date = d.date
+JOIN 
+    fact_aggregated_bookings fab ON fb.property_id = fab.property_id AND fb.room_category = fab.room_category
+GROUP BY 
+    d.`week no`;
+    
+# 30 DSRN WoW Change %
+SELECT 
+    d.`week no`,  (SUM(fab.capacity) - LAG(SUM(fab.capacity)) OVER (ORDER BY d.`week no`)) * 100.0 / NULLIF(LAG(SUM(fab.capacity)) OVER (ORDER BY d.`week no`), 0) AS dsrn_wow_change
+FROM 
+    fact_aggregated_bookings fab
+JOIN 
+    dim_date d ON fab.check_in_date = d.date
+GROUP BY 
+    d.`week no`;
+
+
+
+
 
